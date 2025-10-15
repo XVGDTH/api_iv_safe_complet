@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use App\Models\UserSession;
 
 class AuthController extends Controller
 {
@@ -19,7 +20,7 @@ class AuthController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
+                'Id' => 'required|integer|unique:users,Id',
                 'email' => 'required|string|email|max:255|unique:users',
                 'password' => 'required|string|min:8|confirmed',
             ]);
@@ -33,9 +34,20 @@ class AuthController extends Controller
             }
 
             $user = User::create([
+                'Id' => $request->Id,
+                // 'name' => $request->Id, 
                 'name' => $request->name,
+
+                'prenom' => $request->prenom ?? null,
                 'email' => $request->email,
+                'telephone' => $request->telephone ?? null,
+                'statut' => $request->statut ?? null,
+
                 'password' => Hash::make($request->password),
+                
+                
+                
+                
             ]);
 
             $token = $user->createToken('authToken')->plainTextToken;
@@ -73,7 +85,7 @@ class AuthController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'email' => 'required|string|email',
+                "Id" => 'required|integer',
                 'password' => 'required|string',
             ]);
 
@@ -85,18 +97,44 @@ class AuthController extends Controller
                 ], 422);
             }
 
-            $credentials = $request->only('email', 'password');
+            // PROBLÈME PRINCIPAL : Auth::attempt() ne fonctionne pas avec 'Id'
+            // Laravel s'attend à 'email' ou 'username' par défaut
+            // Solution : Rechercher l'utilisateur manuellement
+            $user = User::where('Id', $request->Id)->first();
 
-            if (!Auth::attempt($credentials)) {
+            if (!$user || !Hash::check($request->password, $user->password)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Les informations d\'identification sont incorrectes.'
                 ], 401);
             }
 
-            $user = Auth::user();
+            // Connecter l'utilisateur manuellement
+            Auth::login($user);
+
+            // Supprimer les anciens tokens et créer un nouveau
             $user->tokens()->delete();
             $token = $user->createToken('auth_token')->plainTextToken;
+
+            // Presence: close any open session then start a new one
+            $open = UserSession::where('user_id', $user->id)
+                ->whereNull('ended_at')
+                ->latest('started_at')
+                ->first();
+            if ($open) {
+                $open->ended_at = now();
+                $open->duration_seconds = $open->started_at->diffInSeconds($open->ended_at);
+                $open->save();
+            }
+            UserSession::create([
+                'user_id'    => $user->id,
+                'started_at' => now(),
+            ]);
+
+            // Update presence timestamps
+            $user->last_login_at = now();
+            $user->last_seen_at = now();
+            $user->save();
 
             return response()->json([
                 'success' => true,
@@ -123,6 +161,24 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         try {
+            $user = $request->user();
+
+            if ($user) {
+                // Close open session if any
+                $open = UserSession::where('user_id', $user->id)
+                    ->whereNull('ended_at')
+                    ->latest('started_at')
+                    ->first();
+                if ($open) {
+                    $open->ended_at = now();
+                    $open->duration_seconds = $open->started_at->diffInSeconds($open->ended_at);
+                    $open->save();
+                }
+                $user->last_logout_at = now();
+                $user->last_seen_at = now();
+                $user->save();
+            }
+
             $request->user()->currentAccessToken()->delete();
 
             return response()->json([

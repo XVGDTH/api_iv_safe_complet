@@ -52,6 +52,9 @@ return [
     |
     */
 
+    'frontend_url' => env('http://flutter.com', 'http://localhost:3000'),
+
+
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
