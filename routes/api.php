@@ -25,6 +25,15 @@ use App\Http\Controllers\Api\DashboardAuthController;
 use App\Http\Controllers\API\PressionController;
 use App\Http\Controllers\DispositifController;
 
+// les routes 
+use App\Http\Controllers\API\GestionPatientController;
+use App\Http\Controllers\API\NotificationMedicaleController;
+
+// import de ma web socket
+use App\Http\Controllers\API\ConnectionController;
+//
+use App\Http\Controllers\API\ConnexionController;
+
 /*
 |--------------------------------------------------------------------------
 | Routes API existantes (CONSERVÉES)
@@ -157,6 +166,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ], 201);
         })->name('urgence');
     });
+    // ✅ NOUVELLES ROUTES POUR ESP32
+    Route::get('/esp32/{esp32_id}', [CommandeController::class, 'getCommandesEsp32'])->name('esp32.commandes');
+    Route::post('/{commande_id}/confirmer', [CommandeController::class, 'confirmerExecution'])->name('confirmer.execution');
+});
 
     // Dashboard protégées
     Route::prefix('dashboard')->name('dashboard.')->group(function () {
@@ -207,7 +220,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [DashboardAuthController::class, 'logout']);
         Route::get('/me', [DashboardAuthController::class, 'me']); // <= ICI (pas de double prefix)
     });
-});
+
 
 /*
 |--------------------------------------------------------------------------
@@ -265,13 +278,53 @@ Route::get('/pressures', [PressureController::class, 'all']);
 Route::get('/pressures/latest', [PressureController::class, 'latest']);
 
 
-// routes non protegés pour le dispositif
-Route::get('/dispositifs', [DispositifController::class, 'index']);   // Récupérer tous
-Route::post('/dispositifs', [DispositifController::class, 'store']); // Créer (POST depuis l’ESP32)
-Route::get('/dispositifs/{id}', [DispositifController::class, 'show']); // Récupérer un par ID
+Route::get('/dispositifs', [DispositifController::class, 'index']);
+Route::get('/dispositifs/latest', [DispositifController::class, 'latest']); // ⬅️ AVANT {id}
+Route::get('/dispositifs/{id}', [DispositifController::class, 'show']);
+Route::post('/dispositifs', [DispositifController::class, 'store']);
 
-// 
+// Routes ESP32
 Route::get('/fetch-esp32', [DispositifController::class, 'fetchFromESP32']);
+
+// routes pour la gestion patient
+
+Route::apiResource('gestionpatients', GestionPatientController::class);
+
+//les routespour les notifications 
+Route::get('notifications/unread', [NotificationMedicaleController::class, 'unread']);
+Route::put('notifications/{id}/read', [NotificationMedicaleController::class, 'markAsRead']);
+Route::apiResource('notifications', NotificationMedicaleController::class);
+
+
+// websocket
+
+
+// ✅ Routes pour détecter les nouvelles connexions
+Route::get('connections/check', [ConnectionController::class, 'checkNewConnections']);
+Route::get('connections/latest-serial', [ConnectionController::class, 'getLatestSerial']);
+
+
+// ✅ Routes pour l'API Connexion (sans conflit avec device_connections)
+Route::prefix('connexions')->group(function () {
+    Route::get('check', [ConnexionController::class, 'checkNewConnections']);
+    Route::get('latest-serial', [ConnexionController::class, 'getLatestSerial']);
+    Route::post('{serial}/mark-registered', [ConnexionController::class, 'markAsRegistered']);
+    Route::get('/', [ConnexionController::class, 'index']);
+    Route::post('{serial}/disconnect', [ConnexionController::class, 'disconnect']);
+});
+Route::prefix('connexions')->group(function () {
+    Route::get('check', [ConnexionController::class, 'checkNewConnections']);
+    Route::get('latest-serial', [ConnexionController::class, 'getLatestSerial']);
+    Route::post('{serial}/mark-registered', [ConnexionController::class, 'markAsRegistered']);
+    Route::get('detect-change', [ConnexionController::class, 'detectSerialChange']);
+});
+
+Route::get('/notifications', [NotificationMedicaleController::class, 'index']);
+Route::post('/notifications', [NotificationMedicaleController::class, 'store']);
+Route::get('/notifications/unread', [NotificationMedicaleController::class, 'unread']);
+Route::patch('/notifications/{id}/mark-read', [NotificationMedicaleController::class, 'markAsRead']);
+Route::delete('/notifications/{id}', [NotificationMedicaleController::class, 'destroy']);
+
 
 
 

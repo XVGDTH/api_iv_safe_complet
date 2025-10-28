@@ -16,6 +16,6 @@ class Pressure extends Model
         'temperature',
         'bpm',
         'spo2',
-        'battery',
+        'batterie', 
     ];
 }
